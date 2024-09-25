@@ -7,6 +7,7 @@
 - Сохранять человека в базу данных (при этом сохранять то, на что он нажал в процессе регистрации)
 """
 
+import argparse
 import asyncio  # Для асинхронного выполнения
 import re  # Для работы с регулярными выражениями
 from typing import List  # Импортируем List для аннотации
@@ -17,8 +18,33 @@ from telebot.asyncio_filters import StateFilter
 from telebot.handler_backends import State, StatesGroup
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# Замените <token> на ваш токен бота
-TOKEN = "<token>"
+parser = argparse.ArgumentParser(
+    description="Программа для подключения к базе данных PostgreSQL"
+)
+parser.add_argument("--token", type=str, required=True, help="Токен для доступа")
+parser.add_argument(
+    "--host", type=str, default="localhost", help="Хост для подключения к БД"
+)
+parser.add_argument("--port", type=int, default=5432, help="Порт для подключения к БД")
+parser.add_argument(
+    "--user", type=str, default="postgres", help="Имя пользователя для БД"
+)
+parser.add_argument("--password", type=str, default="root", help="Пароль для БД")
+parser.add_argument("--database", type=str, default="postgres", help="Имя базы данных")
+parser.add_argument(
+    "--zhurin", type=str, required=True, help="Пароль для доступа к ментору Алексею"
+)
+args = parser.parse_args()
+
+DB_CONFIG = {
+    "host": args.host,
+    "port": args.port,
+    "user": args.user,
+    "password": args.password,
+    "database": args.database,
+}
+TOKEN = args.token
+ZHURIN = args.zhurin
 
 mentor_table = {
     370880482: ["Артур", 1],
@@ -35,14 +61,6 @@ bot = AsyncTeleBot(TOKEN)
 
 # Словарь для хранения данных пользователей до их сохранения в базу данных
 user_data = {}
-
-DB_CONFIG = {
-    "host": "localhost",  # Замените на ваш хост
-    "port": 5432,  # Порт по умолчанию для PostgreSQL
-    "user": "postgres",  # Замените на ваше имя пользователя
-    "password": "root",  # Замените на ваш пароль
-    "database": "postgres",  # Замените на вашу базу данных
-}
 
 # Регистрируем фильтр состояний для обработки состояния пользователей
 bot.add_custom_filter(StateFilter(bot))
@@ -251,14 +269,7 @@ async def process_mentor(callback_query: types.CallbackQuery):
 
 @bot.message_handler(state=UserStates.Zhurin)
 async def password_check(message):
-    if message.text == "".join(
-            map(
-                chr,
-                [
-                    99, 49, 111, 117, 100, 95, 110, 48, 99, 116, 49, 115, 95, 67, 49, 105, 118, 51
-                ],
-            )
-    ):
+    if message.text == ZHURIN:
         await bot.send_message(message.chat.id, "Пароль верный")
         mentor_id = 3
         user_data[message.from_user.id]["mentor_id"] = mentor_id
@@ -766,7 +777,7 @@ async def back_to_check(callback_query: types.CallbackQuery):
 
 
 async def handle_edit(
-        message, field_name, regex, success_message, error_message, allow_none=True
+    message, field_name, regex, success_message, error_message, allow_none=True
 ):
     """
     Обрабатывает редактирование различных полей пользователя.
@@ -1066,7 +1077,7 @@ async def info(message: types.Message) -> None:
         },
         "Зарегистрированные пользователи": {
             "function": reged_persons,
-        }
+        },
     }
 
     user_input = message.text
@@ -1074,7 +1085,10 @@ async def info(message: types.Message) -> None:
         option = options[user_input]
         await option["function"](message)
     else:
-        if user_input == "Зарегистрированные пользователи" and message.from_user.id == 5341457718:
+        if (
+            user_input == "Зарегистрированные пользователи"
+            and message.from_user.id == 5341457718
+        ):
             option = options[user_input]
             await option["function"](message)
         else:
@@ -1090,9 +1104,7 @@ async def info(message: types.Message) -> None:
 
 async def reged_persons(message):
     conn = await connect(**DB_CONFIG)
-    data = await conn.fetch(
-        """SELECT user_id FROM users"""
-    )
+    data = await conn.fetch("""SELECT user_id FROM users""")
 
     # Check if data is not empty
     if data:
@@ -1122,7 +1134,7 @@ async def reged_persons(message):
 
 
 async def add_user(
-        full_name, group_name, topic, mentor, subtopic, additional_info, user_tag, user_id
+    full_name, group_name, topic, mentor, subtopic, additional_info, user_tag, user_id
 ):
     """
     Добавляет нового пользователя в базу данных.
@@ -1468,14 +1480,7 @@ async def process_editing_mentor(callback_query):
 
 @bot.message_handler(state=UserStates.edit_Zhurin)
 async def password_check(message):
-    if message.text == "".join(
-            map(
-                chr,
-                [
-                    99, 49, 111, 117, 100, 95, 110, 48, 99, 116, 49, 115, 95, 67, 49, 105, 118, 51
-                ],
-            )
-    ):
+    if message.text == ZHURIN:
         await bot.send_message(message.chat.id, "Пароль верный")
         mentor_id = 3
         user_data[message.from_user.id]["mentor_id"] = mentor_id
@@ -1517,8 +1522,9 @@ async def process_editing_subtopic(callback_query):
         user_data[user_id]["mentor_id"],
     )
 
-    if mentor_available > 0 or user_data[user_id]['mentor_id'] == await conn.fetchval(
-            "SELECT mentor_id FROM users WHERE user_id = $1", user_id):
+    if mentor_available > 0 or user_data[user_id]["mentor_id"] == await conn.fetchval(
+        "SELECT mentor_id FROM users WHERE user_id = $1", user_id
+    ):
         # Check if subtopic is available
         subtopic_available = await conn.fetchval(
             """
@@ -1760,11 +1766,18 @@ async def delete(message):
         )
     else:
         conn = await connect(**DB_CONFIG)
-        await conn.execute("UPDATE mentors SET registered = registered-1 WHERE id = $1",
-                           await conn.fetchval("SELECT mentor_id FROM users WHERE user_id = $1", message.from_user.id))
-        await conn.execute("UPDATE subtopics SET picked = false WHERE id = $1",
-                           await conn.fetchval("SELECT subtopic_id FROM users WHERE user_id = $1",
-                                               message.from_user.id))
+        await conn.execute(
+            "UPDATE mentors SET registered = registered-1 WHERE id = $1",
+            await conn.fetchval(
+                "SELECT mentor_id FROM users WHERE user_id = $1", message.from_user.id
+            ),
+        )
+        await conn.execute(
+            "UPDATE subtopics SET picked = false WHERE id = $1",
+            await conn.fetchval(
+                "SELECT subtopic_id FROM users WHERE user_id = $1", message.from_user.id
+            ),
+        )
         await conn.execute(
             """DELETE FROM users WHERE user_id = $1""", message.from_user.id
         )
@@ -2133,8 +2146,10 @@ INSERT INTO public.topics (id, full_name, description, mentor) VALUES (14, 'Ад
 INSERT INTO public.topics (id, full_name, description, mentor) VALUES (15, 'Синтаксический анализ ЯП и статический анализ исходных кодов', 'Как проверить длинный код, когда прочитать 100к+ строк уже невмоготу? Автоматизировать чтение этого кода. Направление подразумевает программирование инструментов, способных выполнять анализ исходных кодов проектов, от банального поиска подстроки до анализа потока данных между структурными элементами проекта (функциями и классами), и выявление потенциальных уязвимостей на самом раннем этапе жизненного цикла проекта', '{7}');
 INSERT INTO public.topics (id, full_name, description, mentor) VALUES (6, 'Machine Learning in Cybersecurity', 'Это применение методов машинного обучения для обнаружения и предотвращения кибератак. За счёт своей обобщающей способности машинное обучение позволяет выявлять новые сценарии атак, а так же увеличивать полноту детекта уже существующих. На всё это накладываются строгие требования по производительности и необходимость постоянно обновлять модель, чтобы уметь детектировать актуальные сценарии атак', '{3}');
 INSERT INTO public.topics (id, full_name, description, mentor) VALUES (1, 'Сетевое программирование', 'Программирование приложений, взаимодействующих друг с другом и с сетью интернет: HTTP, TCP и UDP', '{1,7}');
-""")
-        await conn.execute("""
+"""
+        )
+        await conn.execute(
+            """
 INSERT INTO public.mentors (id, full_name, description, subtopic, registered, max_registered) VALUES (5, 'Даниил Кокин', '12', '{12,13,14,15,16}', 0, 4);
 INSERT INTO public.mentors (id, full_name, description, subtopic, registered, max_registered) VALUES (2, 'Влад', '5', '{1}', 0, 2);
 INSERT INTO public.mentors (id, full_name, description, subtopic, registered, max_registered) VALUES (1, 'Артур', '3', '{1}', 0, 7);
@@ -2142,8 +2157,10 @@ INSERT INTO public.mentors (id, full_name, description, subtopic, registered, ma
 INSERT INTO public.mentors (id, full_name, description, subtopic, registered, max_registered) VALUES (7, 'Антон', '16', '{1}', 0, 5);
 INSERT INTO public.mentors (id, full_name, description, subtopic, registered, max_registered) VALUES (6, 'Мариам', '14', '{1}', 0, 4);
 INSERT INTO public.mentors (id, full_name, description, subtopic, registered, max_registered) VALUES (4, 'Крапивенцев Дмитрий', '10', '{7,8,9,10,11}', 0, 5);
-""")
-        await conn.execute("""
+"""
+        )
+        await conn.execute(
+            """
 INSERT INTO public.subtopics (id, full_name, description, picked) VALUES (7, 'Разработка удостоверяющего центра', 'Пусто', false);
 INSERT INTO public.subtopics (id, full_name, description, picked) VALUES (10, 'Приложение сбора низкоуровневой памяти', 'Пусто', false);
 INSERT INTO public.subtopics (id, full_name, description, picked) VALUES (12, 'Мониторинг цен на недвижимость + Аналитика', 'Пусто', false);
@@ -2160,7 +2177,8 @@ INSERT INTO public.subtopics (id, full_name, description, picked) VALUES (3, 'Д
 INSERT INTO public.subtopics (id, full_name, description, picked) VALUES (6, 'Классификация web страниц на основе содержимого', 'Пусто', false);
 INSERT INTO public.subtopics (id, full_name, description, picked) VALUES (5, 'Выявление аномальных http-запросов', 'Пусто', false);
 INSERT INTO public.subtopics (id, full_name, description, picked) VALUES (1, 'Подтему согласовать с ментором', 'Пусто', false);
-""")
+"""
+        )
 
     except Exception as e:
         print(e)
